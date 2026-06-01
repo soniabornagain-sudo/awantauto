@@ -168,19 +168,19 @@ async def run():
         await page.wait_for_load_state("networkidle", timeout=20000)
         print("[2] 발주 페이지 이동 완료")
 
-        # ── 3. 다음 버튼 3번 클릭 (20초 간격) ───────────────────────
-        print("[3] 다음 버튼 3회 클릭 중...")
+        # ── 3. 다음 버튼 4번 클릭 (20초 간격) ───────────────────────
+        print("[3] 다음 버튼 4회 클릭 중...")
         next_btn = page.locator("button.btn-primary").filter(
             has_text=re.compile(r'^다')
         ).first
 
-        for i in range(1, 4):
+        for i in range(1, 5):
             await next_btn.wait_for(state="visible", timeout=10000)
             await next_btn.click()
-            print(f"    다음 클릭 {i}/3 – 20초 대기 중...")
+            print(f"    다음 클릭 {i}/4 – 20초 대기 중...")
             await page.wait_for_timeout(20000)
 
-        print("[3] 다음 버튼 3회 완료")
+        print("[3] 다음 버튼 4회 완료")
 
         # ── 4. '발주가 완료되었습니다.' 팝업 처리 ───────────────────
         print("[4] 완료 팝업 대기 중...")
