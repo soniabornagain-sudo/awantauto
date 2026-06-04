@@ -125,6 +125,7 @@ def send_kakao_message(message: str) -> bool:
 async def run():
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{now}] OneWMS 발주 자동화 시작")
+    send_kakao_message("2단계: OneWMS 발주 시작 🔄")
 
     completed = False
 
@@ -203,7 +204,7 @@ async def run():
 
     # ── 5. 카카오톡 알림 ─────────────────────────────────────────────
     if completed:
-        send_kakao_message("발주 완료되었습니다 ✅")
+        send_kakao_message("3단계: 발주 완료 ✅")
 
 
 if __name__ == "__main__":
