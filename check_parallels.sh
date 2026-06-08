@@ -24,6 +24,52 @@ return false
 EOF
 }
 
+refresh_kakao_token() {
+    local rest_api_key refresh_token client_secret
+    rest_api_key=$(grep '^KAKAO_REST_API_KEY=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2)
+    refresh_token=$(grep '^KAKAO_REFRESH_TOKEN=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2)
+    client_secret=$(grep '^KAKAO_CLIENT_SECRET=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2)
+
+    if [ -z "$rest_api_key" ] || [ -z "$refresh_token" ]; then
+        echo "[WARN] KAKAO_REST_API_KEY 또는 KAKAO_REFRESH_TOKEN 없음 – 토큰 갱신 불가"
+        return 1
+    fi
+
+    local response
+    response=$(curl -s -X POST "https://kauth.kakao.com/oauth/token" \
+        -d "grant_type=refresh_token" \
+        -d "client_id=$rest_api_key" \
+        -d "client_secret=$client_secret" \
+        -d "refresh_token=$refresh_token")
+
+    local new_access_token new_refresh_token
+    new_access_token=$(echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('access_token',''))" 2>/dev/null)
+    new_refresh_token=$(echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('refresh_token',''))" 2>/dev/null)
+
+    if [ -z "$new_access_token" ]; then
+        echo "[WARN] 새 access_token 발급 실패 – 응답: $response"
+        return 1
+    fi
+
+    sed -i '' "s|^KAKAO_ACCESS_TOKEN=.*|KAKAO_ACCESS_TOKEN=$new_access_token|" "$ENV_FILE"
+    if [ -n "$new_refresh_token" ]; then
+        sed -i '' "s|^KAKAO_REFRESH_TOKEN=.*|KAKAO_REFRESH_TOKEN=$new_refresh_token|" "$ENV_FILE"
+        echo "[카카오] access_token + refresh_token 갱신 완료"
+    else
+        echo "[카카오] access_token 갱신 완료"
+    fi
+    return 0
+}
+
+_send_kakao_once() {
+    local token="$1" message="$2"
+    local template
+    template=$(printf '{"object_type":"text","text":"%s","link":{"web_url":"https://onewms.co.kr","mobile_web_url":"https://onewms.co.kr"}}' "$message")
+    curl -s -o /dev/null -w "%{http_code}" -X POST "https://kapi.kakao.com/v2/api/talk/memo/default/send" \
+        -H "Authorization: Bearer $token" \
+        --data-urlencode "template_object=$template"
+}
+
 send_kakao() {
     local message="$1"
     local token
@@ -32,13 +78,27 @@ send_kakao() {
         echo "[WARN] KAKAO_ACCESS_TOKEN 없음 – 카카오 알림 건너뜀"
         return
     fi
-    local template
-    template=$(printf '{"object_type":"text","text":"%s","link":{"web_url":"https://onewms.co.kr","mobile_web_url":"https://onewms.co.kr"}}' "$message")
-    curl -s -X POST "https://kapi.kakao.com/v2/api/talk/memo/default/send" \
-        -H "Authorization: Bearer $token" \
-        --data-urlencode "template_object=$template" \
-        > /dev/null
-    echo "[카카오] 전송 완료: $message"
+
+    local http_code
+    http_code=$(_send_kakao_once "$token" "$message")
+
+    if [ "$http_code" = "401" ]; then
+        echo "[카카오] 토큰 만료(401) – 자동 갱신 시도..."
+        if refresh_kakao_token; then
+            token=$(grep '^KAKAO_ACCESS_TOKEN=' "$ENV_FILE" | cut -d'=' -f2)
+            http_code=$(_send_kakao_once "$token" "$message")
+        else
+            echo "[WARN] 토큰 갱신 실패 – 전송 건너뜀"
+            return 1
+        fi
+    fi
+
+    if [ "$http_code" = "200" ]; then
+        echo "[카카오] 전송 완료: $message"
+    else
+        echo "[WARN] 카카오 전송 실패 – HTTP $http_code: $message"
+        return 1
+    fi
 }
 
 echo "[시작] check_parallels.sh 실행됨 – $(date '+%Y-%m-%d %H:%M:%S')"
