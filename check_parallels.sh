@@ -125,6 +125,11 @@ for i in $(seq 1 12); do
         exit 0
     fi
     echo "[대기] VM 미감지 – ${i}/12 (${i}번째 확인, $((i * 5))초 경과)"
+    # 일정 횟수까지 VM이 안 뜨면 .pvm 파일을 다시 open 시도 (기동 실패 대비)
+    if [ "$i" -eq 5 ] || [ "$i" -eq 10 ]; then
+        echo "[재시도] ${i}번째까지 VM 미감지 – .pvm 다시 열기: $VM_PVM"
+        open "$VM_PVM"
+    fi
 done
 
 echo "[오류] Windows VM이 60초 내에 시작되지 않았습니다" >&2
