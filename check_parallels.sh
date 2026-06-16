@@ -24,6 +24,37 @@ return false
 EOF
 }
 
+# Parallels Desktop 업데이트 preference 도메인
+PD_PREF_DOMAIN="com.parallels.Parallels Desktop"
+
+# 업데이트 팝업을 '클릭해서 닫는' 대신 '아예 안 뜨게' 억제한다.
+# (PM2 환경에서는 osascript/cliclick 모두 손쉬운 사용(Accessibility) 권한이 필요해 클릭이 불가 →
+#  defaults 로 업데이트 확인 자체를 끄는 방식은 권한이 전혀 필요 없다.)
+#  1) 자동 업데이트 확인 끄기(Never)  2) 자동 다운로드 끄기  3) 이미 대기 중인 업데이트는 '건너뛴 버전'으로 표시
+suppress_parallels_update() {
+    defaults write "$PD_PREF_DOMAIN" "Application preferences.Check for updates" -int 0 2>/dev/null
+    defaults write "$PD_PREF_DOMAIN" "Application preferences.Download updates automatically" -bool false 2>/dev/null
+    # 대기 중(UpdateAvailable=1)인 버전을 찾아 SkippedUpdates 로 표시.
+    # 버전 키에 가운뎃점(·)이 들어가 sed/grep으로 깨질 수 있어 python plistlib 로 정확히 처리.
+    python3 - "$PD_PREF_DOMAIN" <<'PYEOF' 2>/dev/null
+import plistlib, os, subprocess, sys
+domain = sys.argv[1]
+path = os.path.expanduser(f'~/Library/Preferences/{domain}.plist')
+try:
+    with open(path, 'rb') as f:
+        prefs = plistlib.load(f)
+except Exception:
+    sys.exit(0)
+prefix = 'ProductUpdate.UpdateAvailable.'
+for key, val in prefs.items():
+    if key.startswith(prefix) and val:
+        ver = key[len(prefix):]
+        subprocess.run(['defaults', 'write', domain,
+                        f'ProductUpdate.SkippedUpdates.{ver}', '-bool', 'true'])
+PYEOF
+    echo "[업데이트] Parallels 자동 업데이트 확인 비활성화 + 대기 업데이트 건너뜀 처리"
+}
+
 refresh_kakao_token() {
     local rest_api_key refresh_token client_secret
     rest_api_key=$(grep '^KAKAO_REST_API_KEY=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2)
@@ -109,6 +140,9 @@ if pgrep -x "prl_vm_app" > /dev/null; then
     send_kakao "1단계: Parallels + Windows 기동 완료 ✅"
     exit 0
 fi
+
+# VM 기동 전에 업데이트 팝업을 원천 억제 (권한 불필요)
+suppress_parallels_update
 
 echo "[Parallels] .pvm 파일 열기 시작 – $VM_PVM"
 open "$VM_PVM"
